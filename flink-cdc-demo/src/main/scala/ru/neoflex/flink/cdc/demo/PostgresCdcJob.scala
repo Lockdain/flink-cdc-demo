@@ -1,4 +1,4 @@
-package ru.neoflex
+package ru.neoflex.flink.cdc.demo
 
 /**
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -18,7 +18,10 @@ package ru.neoflex
  * limitations under the License.
  */
 
+import com.alibaba.ververica.cdc.connectors.postgres.PostgreSQLSource
+import com.alibaba.ververica.cdc.debezium.StringDebeziumDeserializationSchema
 import org.apache.flink.api.scala._
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
 
 /**
  * Skeleton for a Flink Job.
@@ -32,37 +35,16 @@ import org.apache.flink.api.scala._
  * target/scala-2.11/Flink\ Project-assembly-0.1-SNAPSHOT.jar
  *
  */
-object Job {
+object PostgresCdcJob extends PostgresCdcSource {
   def main(args: Array[String]) {
-    // set up the execution environment
-    val env = ExecutionEnvironment.getExecutionEnvironment
 
-    /**
-     * Here, you can start creating your execution plan for Flink.
-     *
-     * Start with getting some data from the environment, like
-     * env.readTextFile(textPath);
-     *
-     * then, transform the resulting DataSet[String] using operations
-     * like:
-     *   .filter()
-     *   .flatMap()
-     *   .join()
-     *   .group()
-     *
-     * and many more.
-     * Have a look at the programming guide:
-     *
-     * http://flink.apache.org/docs/latest/programming_guide.html
-     *
-     * and the examples
-     *
-     * http://flink.apache.org/docs/latest/examples.html
-     *
-     */
+    val env = StreamExecutionEnvironment.getExecutionEnvironment
+    env
+      .addSource(postgresCdcSource)
+      .print()
+      .name("CDC Source")
+      .setParallelism(1)
 
-
-    // execute program
-    env.execute("Flink Scala API Skeleton")
+    env.execute("Postgres CDC Streaming")
   }
 }
