@@ -12,5 +12,6 @@ trait PostgresCdcSource {
     .username("test")
     .password("test")
     .deserializer(new StringDebeziumDeserializationSchema())
+    .decodingPluginName("pgoutput")
     .build
 }
