@@ -8,7 +8,7 @@ trait PostgresCdcSource {
     .hostname("postgres")
     .port(5432)
     .database("account")
-    .schemaList("accounts")
+    .tableList("Clients")
     .username("test")
     .password("test")
     .deserializer(new StringDebeziumDeserializationSchema())

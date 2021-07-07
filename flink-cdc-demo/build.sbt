@@ -11,30 +11,36 @@ organization := "org.example"
 
 ThisBuild / scalaVersion := "2.11.12"
 
-val flinkVersion = "1.13.1"
+val flinkVersion = "1.12.4"
 
 val flinkDependencies = Seq(
-  "org.apache.flink" %% "flink-scala" % flinkVersion % "provided",
-  "org.apache.flink" %% "flink-streaming-scala" % flinkVersion % "provided",
-  "com.alibaba.ververica" % "flink-connector-postgres-cdc" % "1.1.0"
+  "org.apache.flink"     %% "flink-scala"                    % flinkVersion % "provided",
+  "org.apache.flink"     %% "flink-streaming-scala"          % flinkVersion % "provided",
+  "com.alibaba.ververica" % "flink-connector-postgres-cdc"   % "1.3.0",
+  "org.apache.flink"     %% "flink-connector-elasticsearch7" % "1.12.4"
 )
 
-lazy val root = (project in file(".")).
-  settings(
-    libraryDependencies ++= flinkDependencies
-  )
+lazy val root = (project in file(".")).settings(
+  libraryDependencies ++= flinkDependencies
+)
 
-assembly / mainClass := Some("org.example.Job")
+assembly / mainClass := Some("ru.neoflex.flink.cdc.demo.PostgresCdcJob")
 
 // make run command include the provided dependencies
-Compile / run  := Defaults.runTask(Compile / fullClasspath,
-  Compile / run / mainClass,
-  Compile / run / runner
-).evaluated
+Compile / run := Defaults.runTask(Compile / fullClasspath, Compile / run / mainClass, Compile / run / runner).evaluated
 
 // stays inside the sbt console when we press "ctrl-c" while a Flink programme executes with "run" or "runMain"
 Compile / run / fork := true
 Global / cancelable := true
 
 // exclude Scala library from assembly
-assembly / assemblyOption  := (assembly / assemblyOption).value.copy(includeScala = false)
+assembly / assemblyOption := (assembly / assemblyOption).value.copy(includeScala = false)
+
+// Jackson specific merge policies
+assembly / assemblyMergeStrategy := {
+  case PathList(ps @ _*) if ps contains "jackson" => MergeStrategy.first
+  case PathList("META-INF", "MANIFEST.MF")        => MergeStrategy.discard
+  case x =>
+    val oldStrategy = (assembly / assemblyMergeStrategy).value
+    oldStrategy(x)
+}
