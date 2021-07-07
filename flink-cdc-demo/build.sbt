@@ -11,13 +11,13 @@ organization := "org.example"
 
 ThisBuild / scalaVersion := "2.11.12"
 
-val flinkVersion = "1.12.4"
+val flinkVersion = "1.13.1"
 
 val flinkDependencies = Seq(
   "org.apache.flink"     %% "flink-scala"                    % flinkVersion % "provided",
   "org.apache.flink"     %% "flink-streaming-scala"          % flinkVersion % "provided",
-  "com.alibaba.ververica" % "flink-connector-postgres-cdc"   % "1.3.0",
-  "org.apache.flink"     %% "flink-connector-elasticsearch7" % "1.12.4"
+  "com.alibaba.ververica" % "flink-connector-postgres-cdc"   % "1.4.0",
+  "org.apache.flink"     %% "flink-connector-elasticsearch7" % flinkVersion
 )
 
 lazy val root = (project in file(".")).settings(

@@ -1,7 +1,7 @@
 version: '2.2'
 services:
   postgres:
-    image: postgres:12
+    image: postgres:13
     ports:
       - "5432:5432"
     environment:
@@ -32,7 +32,7 @@ services:
       - elasticsearch
 
   jobmanager:
-    image: flink:1.12-scala_2.12
+    image: flink:1.13.1-scala_2.12
     expose:
       - "6123"
     ports:
@@ -42,7 +42,7 @@ services:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
 
   taskmanager:
-    image: flink:1.12-scala_2.12
+    image: flink:1.13.1-scala_2.12
     expose:
       - "6121"
       - "6122"
@@ -55,5 +55,5 @@ services:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
       - |
         FLINK_PROPERTIES=
-        taskmanager.numberOfTaskSlots: 4
-        parallelism.default: 4
+        taskmanager.numberOfTaskSlots: 1
+        parallelism.default: 1

@@ -1,10 +1,10 @@
 CREATE TABLE IF NOT EXISTS accounts."Clients"
 (
     id bigint NOT NULL,
-    name "char(60)",
-    surname "char(60)",
-    gender "char(60)",
-    address "char(60)",
+    name "varchar",
+    surname "varchar",
+    gender "varchar",
+    address "varchar",
     PRIMARY KEY (id)
 );
 
