@@ -24,7 +24,7 @@ import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironm
 import org.apache.flink.table.api.Table
 import org.apache.flink.table.api.bridge.scala.StreamTableEnvironment
 import org.apache.flink.types.Row
-import ru.neoflex.flink.cdc.demo.datamodel.{Client, Location}
+import ru.neoflex.flink.cdc.demo.datamodel.{Client, Location, Transaction}
 import ru.neoflex.flink.cdc.demo.secondary.GeneralSourceSink
 
 /**
@@ -60,16 +60,30 @@ object PostgresCdcJob extends GeneralSourceSink {
 
     // Materialize Locations CDC
     tableEnv.executeSql(
-      "CREATE TABLE locations (id INT, coordinates STRING, nearest_city STRING, ts TIMESTAMP) " +
+      "CREATE TABLE locations (id INT, coordinates STRING, nearest_city STRING, ts DECIMAL) " +
         "WITH ('connector' = 'postgres-cdc', " +
         "'hostname' = 'postgres', " +
         "'port' = '5432', " +
         "'username' = 'test', " +
         "'password' = 'test', " +
-        "'database-name' = 'location', " +
-        "'schema-name' = 'locations', " +
+        "'database-name' = 'account', " +
+        "'schema-name' = 'accounts', " +
         "'table-name' = 'ClientLocation'," +
         "'debezium.slot.name' = 'locations_cdc')"
+    )
+
+    // Materialize Transactions CDC
+    tableEnv.executeSql(
+      "CREATE TABLE transactions (id INT, account_id STRING, amount DECIMAL, ts DECIMAL) " +
+        "WITH ('connector' = 'postgres-cdc', " +
+        "'hostname' = 'postgres', " +
+        "'port' = '5432', " +
+        "'username' = 'test', " +
+        "'password' = 'test', " +
+        "'database-name' = 'account', " +
+        "'schema-name' = 'accounts', " +
+        "'table-name' = 'ClientTransaction'," +
+        "'debezium.slot.name' = 'transactions_cdc')"
     )
 
     // Updates from clients
@@ -78,11 +92,17 @@ object PostgresCdcJob extends GeneralSourceSink {
     // Updates from locations
     val locations: Table = tableEnv.sqlQuery("SELECT * FROM locations")
 
+    // Updates from transactions
+    val transactions: Table = tableEnv.sqlQuery("SELECT * FROM transactions")
+
     // Clients to change stream
     val clientsDataStream = tableEnv.toChangelogStream(clients)
 
     // Locations to change stream
     val locationsDataStream = tableEnv.toChangelogStream(locations)
+
+    // Transactions to change stream
+    val transactionsDataStream = tableEnv.toChangelogStream(transactions)
 
     // Send Clients to Elasticsearch for monitoring purposes
     clientsDataStream
@@ -104,24 +124,22 @@ object PostgresCdcJob extends GeneralSourceSink {
           row.getFieldAs[Integer]("id"),
           row.getFieldAs[String]("coordinates"),
           row.getFieldAs[String]("nearest_city"),
-          row.getFieldAs[Long]("timestamp")
+          row.getFieldAs[java.math.BigDecimal]("ts").longValue
         )
       }
       .addSink(elasticSinkLocationBuilder.build)
 
-//    val cdcSource = env
-//      .addSource(postgresCdcSource)
-//
-//    cdcSource
-//      .uid("PG CDC Source")
-//      .name("PG CDC Source")
-//      .setParallelism(1)
-//
-//    cdcSource
-//      .addSink(elasticSinkBuilder.build)
-//      .setParallelism(1)
-//      .name("Elasticsearch Sink")
-//      .uid("Elasticsearch Sink")
+    // Send Locations to Elasticsearch for monitoring purposes
+   transactionsDataStream
+      .map{
+        row => Transaction(
+          row.getFieldAs[Integer]("id"),
+          row.getFieldAs[String]("account_id"),
+          row.getFieldAs[java.math.BigDecimal]("amount"),
+          row.getFieldAs[java.math.BigDecimal]("ts").longValue
+        )
+      }
+      .addSink(elasticSinkTransactionBuilder.build)
 
     env.execute("Postgres CDC Streaming Job")
   }

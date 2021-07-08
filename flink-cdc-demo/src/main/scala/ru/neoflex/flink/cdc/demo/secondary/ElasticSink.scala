@@ -9,7 +9,7 @@ import org.elasticsearch.client.{Requests, RestClientBuilder}
 import io.circe.generic.auto._
 import io.circe.parser._
 import io.circe.syntax._
-import ru.neoflex.flink.cdc.demo.datamodel.{Client, Location}
+import ru.neoflex.flink.cdc.demo.datamodel.{Client, Location, Transaction}
 
 import java.util
 
@@ -67,6 +67,23 @@ trait ElasticSink {
         val request: IndexRequest = Requests.indexRequest
           .index("locations-index")
           .`type`("locations")
+          .source(json)
+
+        indexer.add(request)
+      }
+    }
+  )
+
+  val elasticSinkTransactionBuilder = new ElasticsearchSink.Builder[Transaction](
+    httpHosts,
+    new ElasticsearchSinkFunction[Transaction] {
+      override def process(element: Transaction, ctx: RuntimeContext, indexer: RequestIndexer): Unit = {
+        val json = new util.HashMap[String, String]
+        json.put("data", element.asJson.noSpaces)
+
+        val request: IndexRequest = Requests.indexRequest
+          .index("transactions-index")
+          .`type`("transactions")
           .source(json)
 
         indexer.add(request)
