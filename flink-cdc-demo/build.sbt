@@ -18,8 +18,17 @@ val flinkDependencies = Seq(
   "org.apache.flink"      %% "flink-streaming-scala"          % flinkVersion % "provided",
   "com.alibaba.ververica" % "flink-connector-postgres-cdc"    % "1.4.0",
   "org.apache.flink"      %% "flink-connector-elasticsearch7" % flinkVersion,
-  "com.typesafe.play"     %% "play-json"                      % "2.7.4"
+  "org.apache.flink"      %% "flink-table-api-scala"          % flinkVersion,
+  "org.apache.flink"      %% "flink-table-api-scala-bridge"   % flinkVersion
 )
+
+val circeVersion = "0.14.1"
+
+libraryDependencies ++= Seq(
+  "io.circe" %% "circe-core",
+  "io.circe" %% "circe-generic",
+  "io.circe" %% "circe-parser"
+).map(_ % circeVersion)
 
 lazy val root = (project in file(".")).settings(
   libraryDependencies ++= flinkDependencies
@@ -39,8 +48,8 @@ assembly / assemblyOption := (assembly / assemblyOption).value.copy(includeScala
 
 // Jackson specific merge policies
 assembly / assemblyMergeStrategy := {
-  case PathList(ps @ _*) if ps contains "jackson" => MergeStrategy.first
-  case PathList("META-INF", "MANIFEST.MF")        => MergeStrategy.discard
+  case PathList(ps @ _*) if ps contains "jackson"     => MergeStrategy.first
+  case PathList("META-INF", "MANIFEST.MF")            => MergeStrategy.discard
   case x =>
     val oldStrategy = (assembly / assemblyMergeStrategy).value
     oldStrategy(x)

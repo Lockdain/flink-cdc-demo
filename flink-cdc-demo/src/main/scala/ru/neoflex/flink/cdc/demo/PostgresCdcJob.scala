@@ -17,17 +17,15 @@ package ru.neoflex.flink.cdc.demo
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import org.apache.flink.api.common.functions.RuntimeContext
+import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.runtime.state.storage.JobManagerCheckpointStorage
 import org.apache.flink.streaming.api.CheckpointingMode
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
-import org.apache.flink.streaming.connectors.elasticsearch.{ ElasticsearchSinkFunction, RequestIndexer }
-import org.apache.flink.streaming.connectors.elasticsearch7.{ ElasticsearchSink, RestClientFactory }
-import org.apache.http.HttpHost
-import org.elasticsearch.action.index.IndexRequest
-import org.elasticsearch.client.{ Requests, RestClientBuilder }
-
-import java.util
+import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment, createTypeInformation}
+import org.apache.flink.table.api.Table
+import org.apache.flink.table.api.bridge.scala.StreamTableEnvironment
+import org.apache.flink.types.Row
+import ru.neoflex.flink.cdc.demo.datamodel.Client
+import ru.neoflex.flink.cdc.demo.secondary.GeneralSourceSink
 
 /**
  * Skeleton for a Flink Job.
@@ -42,28 +40,57 @@ import java.util
  */
 object PostgresCdcJob extends GeneralSourceSink {
   def main(args: Array[String]) {
-
     val env = StreamExecutionEnvironment.getExecutionEnvironment
     setEnvParameters(env)
+    val tableEnv = StreamTableEnvironment.create(env)
 
-    val cdcSource = env
-      .addSource(postgresCdcSource)
+    tableEnv.executeSql(
+      "CREATE TABLE clients (id INT, name STRING, surname STRING, gender STRING, address STRING) " +
+        "WITH ('connector' = 'postgres-cdc', " +
+        "'hostname' = 'postgres', " +
+        "'port' = '5432', " +
+        "'username' = 'test', " +
+        "'password' = 'test', " +
+        "'database-name' = 'account',  " +
+        "'schema-name' = 'accounts', " +
+        "'table-name' = 'Clients')"
+    )
 
-    cdcSource
-      .uid("PG CDC Source")
-      .name("PG CDC Source")
-      .setParallelism(1)
+    val clients: Table = tableEnv.sqlQuery("SELECT * FROM clients")
 
-    cdcSource
-      .addSink(elasticSinkBuilder.build)
-      .setParallelism(1)
-      .name("Elasticsearch Sink")
-      .uid("Elasticsearch Sink")
+    val clientsDataStream = tableEnv.toChangelogStream(clients)
+
+    clientsDataStream
+      .map{
+        row => Client(
+          row.getFieldAs[Integer]("id"),
+          row.getFieldAs[String]("name"),
+          row.getFieldAs[String]("surname"),
+          row.getFieldAs[String]("gender"),
+          row.getFieldAs[String]("address")
+        )
+      }
+      .addSink(elasticSinkClientBuilder.build)
+
+
+//    val cdcSource = env
+//      .addSource(postgresCdcSource)
+//
+//    cdcSource
+//      .uid("PG CDC Source")
+//      .name("PG CDC Source")
+//      .setParallelism(1)
+//
+//    cdcSource
+//      .addSink(elasticSinkBuilder.build)
+//      .setParallelism(1)
+//      .name("Elasticsearch Sink")
+//      .uid("Elasticsearch Sink")
 
     env.execute("Postgres CDC Streaming Job")
   }
 
-  private def setEnvParameters(env: _root_.org.apache.flink.streaming.api.environment.StreamExecutionEnvironment) = {
+  private def setEnvParameters(env: StreamExecutionEnvironment) = {
     env.enableCheckpointing(1000)
     env.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
     env.getCheckpointConfig.setMinPauseBetweenCheckpoints(500)
