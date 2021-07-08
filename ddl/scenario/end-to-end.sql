@@ -22,10 +22,10 @@ ALTER TABLE accounts."Clients"
 --Location table
 CREATE TABLE IF NOT EXISTS accounts."ClientLocation"
 (
-    id bigint NOT NULL,
+    client_l_id bigint NOT NULL,
     coordinates "varchar",
     nearest_city "varchar",
-    ts bigint
+    ts_l bigint
 );
 
 ALTER TABLE accounts."ClientLocation"
@@ -37,10 +37,10 @@ ALTER TABLE accounts."ClientLocation"
 --Transaction table
 CREATE TABLE IF NOT EXISTS accounts."ClientTransaction"
 (
-    id bigint NOT NULL,
+    client_t_id bigint NOT NULL,
     account_id "varchar",
     amount "numeric",
-    ts bigint
+    ts_t bigint
 );
 
 ALTER TABLE accounts."ClientTransaction"

@@ -1,15 +1,14 @@
 package ru.neoflex.flink.cdc.demo.secondary
 
+import io.circe.generic.auto._
+import io.circe.syntax._
 import org.apache.flink.api.common.functions.RuntimeContext
-import org.apache.flink.streaming.connectors.elasticsearch.{ElasticsearchSinkFunction, RequestIndexer}
-import org.apache.flink.streaming.connectors.elasticsearch7.{ElasticsearchSink, RestClientFactory}
+import org.apache.flink.streaming.connectors.elasticsearch.RequestIndexer
+import org.apache.flink.streaming.connectors.elasticsearch7.ElasticsearchSink
 import org.apache.http.HttpHost
 import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.{Requests, RestClientBuilder}
-import io.circe.generic.auto._
-import io.circe.parser._
-import io.circe.syntax._
-import ru.neoflex.flink.cdc.demo.datamodel.{Client, Location, Transaction}
+import ru.neoflex.flink.cdc.demo.datamodel.{AggregatedInfo, Client, Location, Transaction}
 
 import java.util
 
@@ -25,73 +24,78 @@ trait ElasticSink {
 
   val elasticSinkStringBuilder = new ElasticsearchSink.Builder[String](
     httpHosts,
-    new ElasticsearchSinkFunction[String] {
-      override def process(element: String, ctx: RuntimeContext, indexer: RequestIndexer): Unit = {
-        val json = new util.HashMap[String, String]
-        json.put("data", element)
+    (element: String, ctx: RuntimeContext, indexer: RequestIndexer) => {
+      val json = new util.HashMap[String, String]
+      json.put("data", element)
 
-        val request: IndexRequest = Requests.indexRequest
-          .index("clients-index")
-          .`type`("clients")
-          .source(json)
+      val request: IndexRequest = Requests.indexRequest
+        .index("clients-index")
+        .`type`("clients")
+        .source(json)
 
-        indexer.add(request)
-      }
+      indexer.add(request)
     }
   )
 
   val elasticSinkClientBuilder = new ElasticsearchSink.Builder[Client](
     httpHosts,
-    new ElasticsearchSinkFunction[Client] {
-      override def process(element: Client, ctx: RuntimeContext, indexer: RequestIndexer): Unit = {
-        val json = new util.HashMap[String, String]
-        json.put("data", element.asJson.noSpaces)
+    (element: Client, ctx: RuntimeContext, indexer: RequestIndexer) => {
+      val json = new util.HashMap[String, String]
+      json.put("data", element.asJson.noSpaces)
 
-        val request: IndexRequest = Requests.indexRequest
-          .index("clients-index")
-          .`type`("clients")
-          .source(json)
+      val request: IndexRequest = Requests.indexRequest
+        .index("clients-index")
+        .`type`("clients")
+        .source(json)
 
-        indexer.add(request)
-      }
+      indexer.add(request)
     }
   )
 
   val elasticSinkLocationBuilder = new ElasticsearchSink.Builder[Location](
     httpHosts,
-    new ElasticsearchSinkFunction[Location] {
-      override def process(element: Location, ctx: RuntimeContext, indexer: RequestIndexer): Unit = {
-        val json = new util.HashMap[String, String]
-        json.put("data", element.asJson.noSpaces)
+    (element: Location, ctx: RuntimeContext, indexer: RequestIndexer) => {
+      val json = new util.HashMap[String, String]
+      json.put("data", element.asJson.noSpaces)
 
-        val request: IndexRequest = Requests.indexRequest
-          .index("locations-index")
-          .`type`("locations")
-          .source(json)
+      val request: IndexRequest = Requests.indexRequest
+        .index("locations-index")
+        .`type`("locations")
+        .source(json)
 
-        indexer.add(request)
-      }
+      indexer.add(request)
     }
   )
 
   val elasticSinkTransactionBuilder = new ElasticsearchSink.Builder[Transaction](
     httpHosts,
-    new ElasticsearchSinkFunction[Transaction] {
-      override def process(element: Transaction, ctx: RuntimeContext, indexer: RequestIndexer): Unit = {
-        val json = new util.HashMap[String, String]
-        json.put("data", element.asJson.noSpaces)
+    (element: Transaction, ctx: RuntimeContext, indexer: RequestIndexer) => {
+      val json = new util.HashMap[String, String]
+      json.put("data", element.asJson.noSpaces)
 
-        val request: IndexRequest = Requests.indexRequest
-          .index("transactions-index")
-          .`type`("transactions")
-          .source(json)
+      val request: IndexRequest = Requests.indexRequest
+        .index("transactions-index")
+        .`type`("transactions")
+        .source(json)
 
-        indexer.add(request)
-      }
+      indexer.add(request)
     }
   )
 
-  elasticSinkStringBuilder.setRestClientFactory(new RestClientFactory {
-    override def configureRestClientBuilder(restClientBuilder: RestClientBuilder): Unit = {}
-  })
+  val elasticSinkAggregatedBuilder = new ElasticsearchSink.Builder[AggregatedInfo](
+    httpHosts,
+    (element: AggregatedInfo, ctx: RuntimeContext, indexer: RequestIndexer) => {
+      val json = new util.HashMap[String, String]
+      json.put("data", element.asJson.noSpaces)
+
+      val request: IndexRequest = Requests.indexRequest
+        .index("aggregations-index")
+        .`type`("aggregations")
+        .source(json)
+
+      indexer.add(request)
+    }
+  )
+
+  elasticSinkStringBuilder.setRestClientFactory((restClientBuilder: RestClientBuilder) => {})
 }

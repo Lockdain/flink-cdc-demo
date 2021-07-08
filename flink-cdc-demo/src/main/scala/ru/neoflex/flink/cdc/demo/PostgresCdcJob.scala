@@ -17,14 +17,15 @@ package ru.neoflex.flink.cdc.demo
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.runtime.state.storage.JobManagerCheckpointStorage
 import org.apache.flink.streaming.api.CheckpointingMode
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment, createTypeInformation}
+import org.apache.flink.streaming.api.windowing.assigners.TumblingProcessingTimeWindows
+import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.table.api.Table
 import org.apache.flink.table.api.bridge.scala.StreamTableEnvironment
 import org.apache.flink.types.Row
-import ru.neoflex.flink.cdc.demo.datamodel.{Client, Location, Transaction}
+import ru.neoflex.flink.cdc.demo.datamodel.{AggregatedInfo, Client, Location, Transaction}
 import ru.neoflex.flink.cdc.demo.secondary.GeneralSourceSink
 
 /**
@@ -40,9 +41,9 @@ import ru.neoflex.flink.cdc.demo.secondary.GeneralSourceSink
  */
 object PostgresCdcJob extends GeneralSourceSink {
   def main(args: Array[String]) {
-    val env = StreamExecutionEnvironment.getExecutionEnvironment
+    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
     setEnvParameters(env)
-    val tableEnv = StreamTableEnvironment.create(env)
+    val tableEnv: StreamTableEnvironment = StreamTableEnvironment.create(env)
 
     // Materialize Clients CDC
     tableEnv.executeSql(
@@ -60,7 +61,7 @@ object PostgresCdcJob extends GeneralSourceSink {
 
     // Materialize Locations CDC
     tableEnv.executeSql(
-      "CREATE TABLE locations (id INT, coordinates STRING, nearest_city STRING, ts DECIMAL) " +
+      "CREATE TABLE locations (client_l_id INT, coordinates STRING, nearest_city STRING, ts_l DECIMAL) " +
         "WITH ('connector' = 'postgres-cdc', " +
         "'hostname' = 'postgres', " +
         "'port' = '5432', " +
@@ -74,7 +75,7 @@ object PostgresCdcJob extends GeneralSourceSink {
 
     // Materialize Transactions CDC
     tableEnv.executeSql(
-      "CREATE TABLE transactions (id INT, account_id STRING, amount DECIMAL, ts DECIMAL) " +
+      "CREATE TABLE transactions (client_t_id INT, account_id STRING, amount DECIMAL, ts_t DECIMAL) " +
         "WITH ('connector' = 'postgres-cdc', " +
         "'hostname' = 'postgres', " +
         "'port' = '5432', " +
@@ -96,55 +97,95 @@ object PostgresCdcJob extends GeneralSourceSink {
     val transactions: Table = tableEnv.sqlQuery("SELECT * FROM transactions")
 
     // Clients to change stream
-    val clientsDataStream = tableEnv.toChangelogStream(clients)
+    val clientsDataStream: DataStream[Row] = tableEnv.toChangelogStream(clients)
 
     // Locations to change stream
-    val locationsDataStream = tableEnv.toChangelogStream(locations)
+    val locationsRowDataStream: DataStream[Row] = tableEnv.toChangelogStream(locations)
 
     // Transactions to change stream
-    val transactionsDataStream = tableEnv.toChangelogStream(transactions)
+    val transactionsRowDataStream: DataStream[Row] = tableEnv.toChangelogStream(transactions)
 
     // Send Clients to Elasticsearch for monitoring purposes
-    clientsDataStream
-      .map{
-        row => Client(
-          row.getFieldAs[Integer]("id"),
-          row.getFieldAs[String]("name"),
-          row.getFieldAs[String]("surname"),
-          row.getFieldAs[String]("gender"),
-          row.getFieldAs[String]("address")
-        )
-      }
-      .addSink(elasticSinkClientBuilder.build)
+    val clientsStream: DataStream[Client] = clientsDataStream.map { row =>
+      Client(
+        row.getFieldAs[Integer]("id"),
+        row.getFieldAs[String]("name"),
+        row.getFieldAs[String]("surname"),
+        row.getFieldAs[String]("gender"),
+        row.getFieldAs[String]("address")
+      )
+    }
+    clientsStream.addSink(elasticSinkClientBuilder.build)
 
     // Send Locations to Elasticsearch for monitoring purposes
-    locationsDataStream
-      .map{
-        row => Location(
-          row.getFieldAs[Integer]("id"),
-          row.getFieldAs[String]("coordinates"),
-          row.getFieldAs[String]("nearest_city"),
-          row.getFieldAs[java.math.BigDecimal]("ts").longValue
-        )
-      }
-      .addSink(elasticSinkLocationBuilder.build)
+    val locationsStream: DataStream[Location] = locationsRowDataStream.map { row =>
+      Location(
+        row.getFieldAs[Integer]("client_l_id"),
+        row.getFieldAs[String]("coordinates"),
+        row.getFieldAs[String]("nearest_city"),
+        row.getFieldAs[java.math.BigDecimal]("ts_l").longValue
+      )
+    }
+    locationsStream.addSink(elasticSinkLocationBuilder.build)
 
-    // Send Locations to Elasticsearch for monitoring purposes
-   transactionsDataStream
-      .map{
-        row => Transaction(
-          row.getFieldAs[Integer]("id"),
-          row.getFieldAs[String]("account_id"),
-          row.getFieldAs[java.math.BigDecimal]("amount"),
-          row.getFieldAs[java.math.BigDecimal]("ts").longValue
+    // Send Transactions to Elasticsearch for monitoring purposes
+    val transactionsStream: DataStream[Transaction] = transactionsRowDataStream.map { row =>
+      Transaction(
+        row.getFieldAs[Integer]("client_t_id"),
+        row.getFieldAs[String]("account_id"),
+        row.getFieldAs[java.math.BigDecimal]("amount"),
+        row.getFieldAs[java.math.BigDecimal]("ts_t").longValue
+      )
+    }
+    transactionsStream.addSink(elasticSinkTransactionBuilder.build)
+
+    // Joining transactions on locations
+    val preAggregateStream: DataStream[AggregatedInfo] = transactionsStream
+      .join(locationsStream)
+      .where(_.id)
+      .equalTo(_.id)
+      .window(TumblingProcessingTimeWindows.of(Time.minutes(2)))
+      .apply { (transaction, location) =>
+        AggregatedInfo(
+          transaction.id,
+          "",
+          "",
+          "",
+          location.coordinates,
+          location.nearestCity,
+          transaction.amount
         )
       }
-      .addSink(elasticSinkTransactionBuilder.build)
+
+//    preAggregateStream
+//      .addSink(elasticSinkAggregatedBuilder.build)
+
+    // Joining aggregate on client info
+    val fullyAggregatedStream: DataStream[AggregatedInfo] = clientsStream
+      .join(preAggregateStream)
+      .where(_.id)
+      .equalTo(_.id)
+      .window(TumblingProcessingTimeWindows.of(Time.minutes(5)))
+      .allowedLateness(Time.seconds(30))
+      .apply { (clientInfo, preAggregate) =>
+        AggregatedInfo(
+          clientInfo.id,
+          clientInfo.name,
+          clientInfo.surname,
+          clientInfo.gender,
+          preAggregate.coordinates,
+          preAggregate.nearestCity,
+          preAggregate.amount
+        )
+      }
+
+    fullyAggregatedStream
+      .addSink(elasticSinkAggregatedBuilder.build)
 
     env.execute("Postgres CDC Streaming Job")
   }
 
-  private def setEnvParameters(env: StreamExecutionEnvironment) = {
+  private def setEnvParameters(env: StreamExecutionEnvironment): Unit = {
     env.enableCheckpointing(1000)
     env.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
     env.getCheckpointConfig.setMinPauseBetweenCheckpoints(500)
