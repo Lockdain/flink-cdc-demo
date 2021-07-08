@@ -1,7 +1,7 @@
 version: '2.2'
 services:
   postgres:
-    image: postgres:13
+    image: debezium/postgres
     ports:
       - "5432:5432"
     environment:
