@@ -24,7 +24,7 @@ import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironm
 import org.apache.flink.table.api.Table
 import org.apache.flink.table.api.bridge.scala.StreamTableEnvironment
 import org.apache.flink.types.Row
-import ru.neoflex.flink.cdc.demo.datamodel.Client
+import ru.neoflex.flink.cdc.demo.datamodel.{Client, Location}
 import ru.neoflex.flink.cdc.demo.secondary.GeneralSourceSink
 
 /**
@@ -44,6 +44,7 @@ object PostgresCdcJob extends GeneralSourceSink {
     setEnvParameters(env)
     val tableEnv = StreamTableEnvironment.create(env)
 
+    // Materialize Clients CDC
     tableEnv.executeSql(
       "CREATE TABLE clients (id INT, name STRING, surname STRING, gender STRING, address STRING) " +
         "WITH ('connector' = 'postgres-cdc', " +
@@ -53,13 +54,37 @@ object PostgresCdcJob extends GeneralSourceSink {
         "'password' = 'test', " +
         "'database-name' = 'account',  " +
         "'schema-name' = 'accounts', " +
-        "'table-name' = 'Clients')"
+        "'table-name' = 'Clients'," +
+        "'debezium.slot.name' = 'clients_cdc')"
     )
 
+    // Materialize Locations CDC
+    tableEnv.executeSql(
+      "CREATE TABLE locations (id INT, coordinates STRING, nearest_city STRING, ts TIMESTAMP) " +
+        "WITH ('connector' = 'postgres-cdc', " +
+        "'hostname' = 'postgres', " +
+        "'port' = '5432', " +
+        "'username' = 'test', " +
+        "'password' = 'test', " +
+        "'database-name' = 'location', " +
+        "'schema-name' = 'locations', " +
+        "'table-name' = 'ClientLocation'," +
+        "'debezium.slot.name' = 'locations_cdc')"
+    )
+
+    // Updates from clients
     val clients: Table = tableEnv.sqlQuery("SELECT * FROM clients")
 
+    // Updates from locations
+    val locations: Table = tableEnv.sqlQuery("SELECT * FROM locations")
+
+    // Clients to change stream
     val clientsDataStream = tableEnv.toChangelogStream(clients)
 
+    // Locations to change stream
+    val locationsDataStream = tableEnv.toChangelogStream(locations)
+
+    // Send Clients to Elasticsearch for monitoring purposes
     clientsDataStream
       .map{
         row => Client(
@@ -72,6 +97,17 @@ object PostgresCdcJob extends GeneralSourceSink {
       }
       .addSink(elasticSinkClientBuilder.build)
 
+    // Send Locations to Elasticsearch for monitoring purposes
+    locationsDataStream
+      .map{
+        row => Location(
+          row.getFieldAs[Integer]("id"),
+          row.getFieldAs[String]("coordinates"),
+          row.getFieldAs[String]("nearest_city"),
+          row.getFieldAs[Long]("timestamp")
+        )
+      }
+      .addSink(elasticSinkLocationBuilder.build)
 
 //    val cdcSource = env
 //      .addSource(postgresCdcSource)
